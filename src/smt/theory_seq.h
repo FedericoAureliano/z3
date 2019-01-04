@@ -32,6 +32,8 @@ Revision History:
 #include "smt/smt_arith_value.h"
 #include "smt/theory_seq_empty.h"
 
+#include<set>
+
 namespace smt {
 
     class theory_seq : public theory {
@@ -317,6 +319,8 @@ namespace smt {
             unsigned m_fixed_length;
             unsigned m_propagate_contains;
             unsigned m_int_string;
+            unsigned m_nth_blasts;
+            unsigned m_multiset_checks;
         };
         typedef hashtable<rational, rational::hash_proc, rational::eq_proc> rational_set;
 
@@ -469,6 +473,9 @@ namespace smt {
         bool is_ternary_eq2(expr_ref_vector const& ls, expr_ref_vector const& rs, expr_ref_vector& xs, expr_ref& x, expr_ref& y1, expr_ref_vector& ys, expr_ref& y2, bool flag1);
         bool solve_binary_eq(expr_ref_vector const& l, expr_ref_vector const& r, dependency* dep);
         bool propagate_max_length(expr* l, expr* r, dependency* dep);
+
+        bool nth_blast(dependency* dep, expr_ref_vector const& ls, expr_ref_vector const& rs,  vector<rational> const& ll, vector<rational> const& rl);
+        bool coherent_multisets(expr_ref_vector const& l, expr_ref_vector const& r, dependency* deps);
 
         bool get_length(expr* s, expr_ref& len, literal_vector& lits);
         bool reduce_length(expr* l, expr* r, literal_vector& lits);

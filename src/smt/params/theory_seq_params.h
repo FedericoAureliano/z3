@@ -25,9 +25,14 @@ struct theory_seq_params {
      */
     bool m_split_w_len;
 
+    /*
+     * Enable nth blasting
+     */
+    bool m_nth_blast;
 
     theory_seq_params(params_ref const & p = params_ref()):
-        m_split_w_len(true)
+        m_split_w_len(true),
+        m_nth_blast(true)
     {
         updt_params(p);
     }

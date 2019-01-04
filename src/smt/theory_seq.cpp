@@ -1380,10 +1380,20 @@ bool theory_seq::branch_variable_mb() {
             change = true;
             continue;
         }
-        if (split_lengths(e.dep(), e.ls(), e.rs(), len1, len2)) {
-            TRACE("seq", tout << "split lengths\n";);
-            change = true;
-            break;
+        if (m_params.m_nth_blast) {
+            if (nth_blast(e.dep(), e.ls(), e.rs(), len1, len2)) {
+                ++m_stats.m_nth_blasts;
+                TRACE("seq", tout << "nth_blast\n";);
+                change = true;
+                break;
+            }
+        }
+        else {
+            if (split_lengths(e.dep(), e.ls(), e.rs(), len1, len2)) {
+                TRACE("seq", tout << "split lengths\n";);
+                change = true;
+                break;
+            }
         }
     }
     CTRACE("seq", change, tout << "branch_variable_mb\n";);
@@ -1476,7 +1486,7 @@ bool theory_seq::split_lengths(dependency* dep,
     literal_vector lits;
     lits.push_back(lit1);
     lits.push_back(lit2);
-    
+
     if (ctx.get_assignment(lit1) != l_true ||
         ctx.get_assignment(lit2) != l_true) {
         ctx.mark_as_relevant(lit1);
@@ -2477,6 +2487,11 @@ bool theory_seq::solve_eq(expr_ref_vector const& l, expr_ref_vector const& r, de
     }
     if (!ctx.inconsistent() && solve_itos(rs, ls, deps)) {
         return true;
+    }
+    if (m_params.m_nth_blast && change && !ctx.inconsistent() && !coherent_multisets(ls, rs, deps)) {
+        ++m_stats.m_multiset_checks;
+        TRACE("seq", tout << "multiset conflict\n";);
+        return false;
     }
     if (!ctx.inconsistent() && change) {
         // The propagation step from arithmetic state (e.g. length offset) to length constraints
@@ -3746,6 +3761,8 @@ void theory_seq::collect_statistics(::statistics & st) const {
     st.update("seq fixed length", m_stats.m_fixed_length);
     st.update("seq int.to.str", m_stats.m_int_string);
     st.update("seq automata", m_stats.m_propagate_automata);
+    st.update("seq nth blasts", m_stats.m_nth_blasts);
+    st.update("seq multiset checks", m_stats.m_multiset_checks);
 }
 
 void theory_seq::init_search_eh() {
@@ -5712,4 +5729,195 @@ void theory_seq::get_ite_concat(expr* e, ptr_vector<expr>& concats) {
         concats.push_back(e);        
         return;
     }
+}
+
+
+bool theory_seq::coherent_multisets(expr_ref_vector const& l, expr_ref_vector const& r, dependency* deps) {
+    std::multiset<expr*> left_var_set;
+    std::multiset<expr*> left_elem_set;
+
+    for (auto const& elem : l) {
+        SASSERT(m_util.is_seq(elem));
+        if (m_util.str.is_unit(elem)) {
+            TRACE("seq", tout << "adding " << mk_ismt2_pp(elem, m) << " to left_c_set" << std::endl;);
+            left_elem_set.insert(elem);
+        } else if (is_var(elem)){
+            TRACE("seq", tout << "adding " << mk_ismt2_pp(elem, m) << " to left_v_set" << std::endl;);
+            left_var_set.insert(elem);
+        } else {
+            TRACE("seq", tout << "Not a unit or a variable! " << mk_ismt2_pp(elem, m) << std::endl;);
+            return true;
+        }
+    }    
+
+    std::multiset<expr*> right_var_set;
+    std::multiset<expr*> right_elem_set;
+
+    for (auto const& elem : r) {
+        SASSERT(m_util.is_seq(elem));
+        if (m_util.str.is_unit(elem)) {
+            TRACE("seq", tout << "adding " << mk_ismt2_pp(elem, m) << " to right_c_set" << std::endl;);
+            right_elem_set.insert(elem);
+        } else if (is_var(elem)){
+            TRACE("seq", tout << "adding " << mk_ismt2_pp(elem, m) << " to right_v_set" << std::endl;);
+            right_var_set.insert(elem);
+        } else {
+            TRACE("seq", tout << "Not a unit or a variable! " << mk_ismt2_pp(elem, m) << std::endl;);
+            return true;
+        }
+    }    
+
+    if (left_var_set == right_var_set && left_elem_set != right_elem_set) {
+        TRACE("seq", tout << l << " != " << r << "\n";);
+        set_conflict(deps);
+        return false;
+    }
+    return true;
+}
+
+
+
+/*
+suppose we are looking at equation 
+         WcX = YdZ
+and focused on the character pair (c, d). 
+
+First get the length dependency for this pair.
+In the example, the length dependency is len(W) = len(Y).
+
+With this dependency, and the dependencies on the equation,
+propagate, for the running example WcX = YdZ, that c = d.
+
+Do this for all pairs
+*/
+bool theory_seq::nth_blast(dependency* dep,
+                               expr_ref_vector const& ls, expr_ref_vector const& rs, 
+                               vector<rational> const& ll, vector<rational> const& rl) {
+    
+    context& ctx = get_context();
+    expr_ref X(m), Y(m), b(m);
+    expr_ref_vector next_ls(m), next_rs(m);
+    vector<rational> next_ll, next_rl;
+
+    if (ls.empty() || rs.empty()) {
+        return false;
+    } 
+    if (is_var(ls[0]) && ll[0].is_zero()) {
+        return set_empty(ls[0]);
+    }
+    if (is_var(rs[0]) && rl[0].is_zero()) {
+        return set_empty(rs[0]);
+    }
+    if (is_var(rs[0]) && !is_var(ls[0])) {
+        return nth_blast(dep, rs, ls, rl, ll);
+    }
+    // if (!is_var(ls[0])) {
+    //     return false;
+    // }
+    X = ls[0];
+    rational lenX = ll[0];
+
+    SASSERT(lenX.is_pos());
+    // we have a variable on the left and its length is positive
+    // now grab as many complete parts (and possibly one incomplete part) 
+    // from the right to match the length
+    // and set them equal to each other
+
+    expr_ref_vector bs(m);
+    rational lenB(0), lenY(0);
+    unsigned i = 0;
+    for (; lenX > lenB && i < rs.size(); ++i) {
+        bs.push_back(rs[i]);
+        lenY = rl[i];
+        lenB += lenY;
+    }
+    rational lenY1(lenB - lenX); // lenB is actually len(bY), we want the remaining part of Y
+    rational lenY2(lenY - lenY1);
+
+    SASSERT(lenX <= lenB);
+    SASSERT(!bs.empty());
+    Y = bs.back();
+    bs.pop_back();
+    if (!is_var(Y) && !m_util.str.is_unit(Y)) {
+        TRACE("seq", tout << "TBD: non variable or unit split: " << Y << "\n";);
+        return false;
+    }
+    if (lenY.is_zero()) {
+        return set_empty(Y);
+    }
+    b = mk_concat(bs, m.get_sort(X));
+
+    expr_ref lenXE = mk_len(X);
+    expr_ref lenYE = mk_len(Y);
+    expr_ref lenb = mk_len(b);
+
+    literal_vector lits;
+    if (m_util.str.is_unit(Y)) {
+        lits.push_back(mk_literal(m_autil.mk_eq(lenXE, mk_add(lenb, lenYE))));
+    } else {
+        lits.push_back(mk_literal(m_autil.mk_eq(lenXE, mk_add(lenb, m_autil.mk_int(lenY1)))));
+        lits.push_back(mk_literal(m_autil.mk_ge(lenYE, m_autil.mk_int(lenY1 + 1))));
+    }
+
+    TRACE("seq",
+    for (literal lit : lits) {
+        tout << "lit is " << ctx.get_assignment(lit) << "\n";
+        ctx.display_literal_verbose(tout << lit << ": ", lit) << "\n";
+        ctx.display(tout, ctx.get_justification(lit.var())); tout << "\n";
+    });
+
+    bool marked = false;
+    for (literal lit : lits) {
+        if (ctx.get_assignment(lit) != l_true) {
+            SASSERT(ctx.get_assignment(lit) == l_undef);
+            ctx.mark_as_relevant(lit);
+            marked = true;
+        }
+    }
+
+    if (marked) {
+        return true;
+    }
+    
+    if (m_util.str.is_unit(Y)) {
+        SASSERT(lenB == lenX);
+        bs.push_back(Y);
+        expr_ref bY(m_util.str.mk_concat(bs), m);
+        TRACE("seq", tout << "Propagating " << X << " = "  << bY << "\n";);
+        propagate_eq(dep, lits, X, bY, true);
+    }
+    else {
+        SASSERT(is_var(Y));
+
+        expr_ref seq(Y, m), head(m), tail(m);
+        expr_ref_vector elems(m);
+        
+        for (unsigned j = 0; j < lenY.get_unsigned(); ++j) {
+            mk_decompose(seq, head, tail);
+            seq = tail;
+            if (j < lenY1.get_unsigned()) {
+                elems.push_back(head);
+            }
+            else {
+                next_rs.push_back(head);
+                next_rl.push_back(rational(1));
+            }
+        }
+        expr_ref Y1 = mk_concat(elems.size(), elems.c_ptr());
+        expr_ref bY1 = mk_concat(b, Y1);
+        TRACE("seq", tout << "Propagating " << X << " = "  << bY1 << "\n";);
+        propagate_eq(dep, lits, X, bY1, true);
+    }
+
+    for (; i < rs.size(); ++i) {
+        next_rs.push_back(rs[i]);
+        next_rl.push_back(rl[i]);
+    }
+
+    for (unsigned j = 1; j < ls.size(); ++j) {
+        next_ls.push_back(ls[j]);
+        next_ll.push_back(ll[j]);
+    }
+    // repeat on the rest, but we've already succeded on at least one.
+    return nth_blast(mk_join(dep, lits), next_rs, next_ls, next_rl, next_ll) ||  true;
 }
