@@ -1344,11 +1344,12 @@ bool theory_seq::len_based_split(eq const& e) {
    this performs much better on #1628
 */
 bool theory_seq::branch_variable() {
-    if (branch_variable_mb()) return true;
+    if (!m_params.m_nth_blast && branch_variable_mb()) return true;
     if (branch_variable_eq()) return true;
     if (branch_ternary_variable1()) return true;
     if (branch_ternary_variable2()) return true;
     if (branch_quat_variable()) return true;
+    if (m_params.m_nth_blast && nth_blast()) return true;
     return false;
 }
 
@@ -1380,20 +1381,10 @@ bool theory_seq::branch_variable_mb() {
             change = true;
             continue;
         }
-        if (m_params.m_nth_blast) {
-            if (nth_blast(e.dep(), e.ls(), e.rs(), len1, len2)) {
-                ++m_stats.m_nth_blasts;
-                TRACE("seq", tout << "nth_blast\n";);
-                change = true;
-                break;
-            }
-        }
-        else {
-            if (split_lengths(e.dep(), e.ls(), e.rs(), len1, len2)) {
-                TRACE("seq", tout << "split lengths\n";);
-                change = true;
-                break;
-            }
+        if (split_lengths(e.dep(), e.ls(), e.rs(), len1, len2)) {
+            TRACE("seq", tout << "split lengths\n";);
+            change = true;
+            break;
         }
     }
     CTRACE("seq", change, tout << "branch_variable_mb\n";);
@@ -5776,6 +5767,47 @@ bool theory_seq::coherent_multisets(expr_ref_vector const& l, expr_ref_vector co
 }
 
 
+bool theory_seq::nth_blast() {
+    bool change = false;
+    for (auto const& e : m_eqs) {
+        vector<rational> len1, len2;
+        if (!is_complex(e)) {
+            continue;
+        }
+        if (e.ls().empty() || e.rs().empty()) {
+            continue;
+        }
+        if (!enforce_length(e.ls(), len1) || !enforce_length(e.rs(), len2)) {
+            TRACE("seq", tout << "not all have length info\n";);
+            change = true;
+            continue;
+        }
+        rational l1, l2;
+        for (const auto& elem : len1) l1 += elem;
+        for (const auto& elem : len2) l2 += elem;
+        if (l1 != l2) {
+            TRACE("seq", tout << "lengths are not compatible\n";);
+            expr_ref l = mk_concat(e.ls());
+            expr_ref r = mk_concat(e.rs());
+            expr_ref lnl = mk_len(l), lnr = mk_len(r);
+            propagate_eq(e.dep(), lnl, lnr, false);
+            change = true;
+            continue;
+        }
+        if (l1.get_unsigned() > 10000) {
+            continue;
+        }
+        if (nth_blast(e.dep(), e.ls(), e.rs(), len1, len2)) {
+            ++m_stats.m_nth_blasts;
+            TRACE("seq", tout << "nth_blast\n";);
+            change = true;
+            break;
+        }
+    }
+    CTRACE("seq", change, tout << "nth_blast " << change << "\n";);
+    return change;
+}
+
 
 /*
 suppose we are looking at equation 
@@ -5811,17 +5843,9 @@ bool theory_seq::nth_blast(dependency* dep,
     if (is_var(rs[0]) && !is_var(ls[0])) {
         return nth_blast(dep, rs, ls, rl, ll);
     }
-    // if (!is_var(ls[0])) {
-    //     return false;
-    // }
     X = ls[0];
     rational lenX = ll[0];
-
     SASSERT(lenX.is_pos());
-    // we have a variable on the left and its length is positive
-    // now grab as many complete parts (and possibly one incomplete part) 
-    // from the right to match the length
-    // and set them equal to each other
 
     expr_ref_vector bs(m);
     rational lenB(0), lenY(0);
@@ -5831,8 +5855,8 @@ bool theory_seq::nth_blast(dependency* dep,
         lenY = rl[i];
         lenB += lenY;
     }
-    rational lenY1(lenB - lenX); // lenB is actually len(bY), we want the remaining part of Y
-    rational lenY2(lenY - lenY1);
+    rational lenY2(lenB - lenX); // lenB is actually len(bY), we want the remaining part of Y
+    rational lenY1(lenY - lenY2);
 
     SASSERT(lenX <= lenB);
     SASSERT(!bs.empty());
@@ -5869,8 +5893,8 @@ bool theory_seq::nth_blast(dependency* dep,
     bool marked = false;
     for (literal lit : lits) {
         if (ctx.get_assignment(lit) != l_true) {
-            SASSERT(ctx.get_assignment(lit) == l_undef);
             ctx.mark_as_relevant(lit);
+            ctx.force_phase(lit);
             marked = true;
         }
     }
