@@ -1344,12 +1344,12 @@ bool theory_seq::len_based_split(eq const& e) {
    this performs much better on #1628
 */
 bool theory_seq::branch_variable() {
-    if (!m_params.m_nth_blast && branch_variable_mb()) return true;
-    if (branch_variable_eq()) return true;
+    if (m_params.m_nth_blast == 0 && branch_variable_mb()) return true;
+    if (m_params.m_nth_blast == 0 && branch_variable_eq()) return true;
     if (branch_ternary_variable1()) return true;
     if (branch_ternary_variable2()) return true;
     if (branch_quat_variable()) return true;
-    if (m_params.m_nth_blast && nth_blast()) return true;
+    if (m_params.m_nth_blast > 0 && nth_blast()) return true;
     return false;
 }
 
@@ -2479,7 +2479,7 @@ bool theory_seq::solve_eq(expr_ref_vector const& l, expr_ref_vector const& r, de
     if (!ctx.inconsistent() && solve_itos(rs, ls, deps)) {
         return true;
     }
-    if (m_params.m_nth_blast && change && !ctx.inconsistent() && !coherent_multisets(ls, rs, deps)) {
+    if (m_params.m_nth_blast > 0 && change && !ctx.inconsistent() && !coherent_multisets(ls, rs, deps)) {
         ++m_stats.m_multiset_checks;
         TRACE("seq", tout << "multiset conflict\n";);
         return false;
@@ -5794,17 +5794,23 @@ bool theory_seq::nth_blast() {
             change = true;
             continue;
         }
-        if (l1.get_unsigned() > 10000) {
+        if (l1.get_unsigned() > m_params.m_nth_blast) {
+            if (split_lengths(e.dep(), e.ls(), e.rs(), len1, len2)) {
+                TRACE("seq", tout << "split lengths\n";);
+                change = true;
+                break;
+            }
             continue;
         }
         if (nth_blast(e.dep(), e.ls(), e.rs(), len1, len2)) {
             ++m_stats.m_nth_blasts;
+            --m_stats.m_branch_variable;
             TRACE("seq", tout << "nth_blast\n";);
             change = true;
             break;
         }
     }
-    CTRACE("seq", change, tout << "nth_blast " << change << "\n";);
+    CTRACE("seq", change, tout << "nth_blast\n";);
     return change;
 }
 
@@ -5870,6 +5876,7 @@ bool theory_seq::nth_blast(dependency* dep,
         return set_empty(Y);
     }
     b = mk_concat(bs, m.get_sort(X));
+    TRACE("seq", tout << "Working with " << X << " = "  << b << Y << "\n";);
 
     expr_ref lenXE = mk_len(X);
     expr_ref lenYE = mk_len(Y);
@@ -5880,7 +5887,7 @@ bool theory_seq::nth_blast(dependency* dep,
         lits.push_back(mk_literal(m_autil.mk_eq(lenXE, mk_add(lenb, lenYE))));
     } else {
         lits.push_back(mk_literal(m_autil.mk_eq(lenXE, mk_add(lenb, m_autil.mk_int(lenY1)))));
-        lits.push_back(mk_literal(m_autil.mk_ge(lenYE, m_autil.mk_int(lenY1 + 1))));
+        lits.push_back(mk_literal(m_autil.mk_eq(lenYE, m_autil.mk_int(lenY))));
     }
 
     TRACE("seq",
@@ -5943,5 +5950,6 @@ bool theory_seq::nth_blast(dependency* dep,
         next_ll.push_back(ll[j]);
     }
     // repeat on the rest, but we've already succeded on at least one.
+    TRACE("seq", tout << "Recurse!\n";);
     return nth_blast(mk_join(dep, lits), next_rs, next_ls, next_rl, next_ll) ||  true;
 }
