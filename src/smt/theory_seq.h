@@ -474,8 +474,8 @@ namespace smt {
         bool solve_binary_eq(expr_ref_vector const& l, expr_ref_vector const& r, dependency* dep);
         bool propagate_max_length(expr* l, expr* r, dependency* dep);
 
-        bool nth_blast();
-        bool nth_blast(dependency* dep, expr_ref_vector const& ls, expr_ref_vector const& rs,  vector<rational> const& ll, vector<rational> const& rl);
+        void set_refined_conflict(dependency* deps, expr_ref_vector const& lhs, expr_ref_vector const& rhs);
+        literal theory_seq::length_generalize(expr_ref_vector const& lhs, expr_ref_vector const& rhs);
         bool coherent_multisets(expr_ref_vector const& l, expr_ref_vector const& r, dependency* deps);
 
         bool get_length(expr* s, expr_ref& len, literal_vector& lits);
