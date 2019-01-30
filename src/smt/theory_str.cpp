@@ -10668,6 +10668,7 @@ namespace smt {
                 // whatever came back in CEX is the conflict clause.
                 // negate its conjunction and assert that
                 expr_ref conflict(m.mk_not(mk_and(cex)), m);
+                TRACE("str_mc", tout << "conflict! " << mk_pp(conflict, m) << std::endl;);
                 assert_axiom(conflict);
                 add_persisted_axiom(conflict);
                 fixed_length_transcendent_axioms.push_back(conflict);
@@ -13446,7 +13447,7 @@ namespace smt {
         // for each character c that appears in the equality:
         std::set<expr*> characterSet;
         
-        if (!get_sets(premise, &characterSet, &varSet)) {
+        if (!get_string_sets(premise, &characterSet, &varSet)) {
             return false;
         }
         TRACE("str", tout << "CharacterSet.size(): " << characterSet.size() << std::endl;);
@@ -13491,7 +13492,7 @@ namespace smt {
         return true;
     }
 
-    bool theory_str::get_sets(expr * ex,  std::set<expr*> *characterSet, std::set<expr*> *varSet) {
+    bool theory_str::get_string_sets(expr * ex,  std::set<expr*> *characterSet, std::set<expr*> *varSet) {
         ast_manager & m = get_manager();
         
         TRACE("str", tout << "Getting vars/literal characters in " << mk_ismt2_pp(ex, m) << std::endl;);
@@ -13523,7 +13524,7 @@ namespace smt {
                 }else if(u.str.is_concat(ap)){
                     unsigned num_args = ap->get_num_args();
                     for (unsigned i = 0; i < num_args; i++) {
-                        if (!get_sets(ap->get_arg(i), characterSet, varSet)) {
+                        if (!get_string_sets(ap->get_arg(i), characterSet, varSet)) {
                             return false;
                         }
                     }
@@ -13534,6 +13535,129 @@ namespace smt {
                 }
             }
         }
+        return false;
+    }
+
+    bool theory_str::get_int_var_set(expr * ex, std::set<expr*> *varSet) {
+        ast_manager & m = get_manager();
+        sort * ex_sort = m.get_sort(ex);
+        sort * str_sort = u.str.mk_string_sort();
+
+        TRACE("str", tout << "Getting integer variables (lengths included) " << mk_ismt2_pp(ex, m) << std::endl;);
+
+        if (u.str.is_string(ex)) {
+            return true;
+        } if (ex_sort == str_sort) {
+            TRACE("str", tout << "adding length of " << mk_ismt2_pp(ex, m) << " to v_set" << std::endl;);
+            varSet->insert(u.str.mk_length(ex));
+            return true;
+        } if (u.str.is_itos(ex)) {
+            TRACE("str", tout << "itos not implemented yet!" << std::endl;);
+            UNREACHABLE();
+            return false;
+        } if (u.str.is_at(ex)) {
+            TRACE("str", tout << "at" << std::endl;);
+            expr* substrBase = nullptr;
+            expr* substrPos = nullptr;
+            u.str.is_at(ex, substrBase, substrPos);
+            // arith_value v(ctx);
+            // rational pos;
+            // bool pos_exists = v.get_value(substrPos, pos);
+            // SASSERT(pos_exists);
+            // extra_deps.push_back(m.mk_eq(substrPos, mk_int(pos)));
+            varSet->insert(substrPos);
+            if (!get_int_var_set(substrBase, varSet)) {
+                return false;
+            }
+            return true;
+
+        } if (u.str.is_extract(ex)) {
+            TRACE("str", tout << "extract" << std::endl;);
+            expr* substrBase = nullptr;
+            expr* substrPos = nullptr;
+            expr* substrLen = nullptr;
+            u.str.is_extract(ex, substrBase, substrPos, substrLen);
+            // arith_value v(ctx);
+            // rational len, pos;
+            // bool len_exists = v.get_value(substrLen, len);
+            // bool pos_exists = v.get_value(substrPos, pos);
+
+            // SASSERT(len_exists && pos_exists);
+            // extra_deps.push_back(m.mk_eq(substrPos, mk_int(pos)));
+            varSet->insert(substrPos);
+            varSet->insert(substrLen);
+            if (!get_int_var_set(substrBase, varSet)) {
+                return false;
+            }
+            return true;
+
+        } if (u.str.is_replace(ex)) {
+            TRACE("str", tout << "replace not implemented yet!" << std::endl;);
+            UNREACHABLE();
+            return false;
+        }
+        if (u.str.is_stoi(ex)) {
+            TRACE("str", tout << "stoi not implemented yet!" << std::endl;);
+            UNREACHABLE();
+            return false;
+        } if (u.str.is_prefix(ex)) {
+            TRACE("str", tout << "prefix" << std::endl;);
+            expr * full;
+            expr * pref;
+            u.str.is_prefix(ex, pref, full);
+            if (!get_int_var_set(pref, varSet)) {
+                return false;
+            }
+            if (!get_int_var_set(full, varSet)) {
+                return false;
+            }
+            return true;
+        } if (u.str.is_suffix(ex)) {
+            TRACE("str", tout << "suffix" << std::endl;);
+            expr * full;
+            expr * suff;
+            u.str.is_suffix(ex, suff, full);
+            if (!get_int_var_set(suff, varSet)) {
+                return false;
+            }
+            if (!get_int_var_set(full, varSet)) {
+                return false;
+            }
+            return true;
+        } if (u.str.is_contains(ex)) {
+            TRACE("str", tout << "contains" << std::endl;);
+            expr * needle;
+            expr * haystack;
+            u.str.is_contains(ex, haystack, needle);
+            if (!get_int_var_set(haystack, varSet)) {
+                return false;
+            }
+            if (!get_int_var_set(needle, varSet)) {
+                return false;
+            }
+            return true;
+        } if (m.is_not(ex)) {
+            TRACE("str", tout << "not" << std::endl;);
+            expr * subterm;
+            m.is_not(ex, subterm);
+            if (!get_int_var_set(subterm, varSet)) {
+                return false;
+            }
+            return true;
+        }
+        app * ap = to_app(ex);
+        if(u.str.is_concat(ap)){
+            TRACE("str", tout << "concat" << std::endl;);
+            unsigned num_args = ap->get_num_args();
+            for (unsigned i = 0; i < num_args; i++) {
+                if (!get_int_var_set(ap->get_arg(i), varSet)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        TRACE("str", tout << "nothing" << std::endl;);
         return false;
     }
 
@@ -13722,7 +13846,7 @@ namespace smt {
             TRACE("str", tout << "extra_deps " << mk_pp(diseqs.get(diseqs.size()-1), m) << std::endl;);
         }
         expr* final_diseq = m.mk_and(diseqs.size(), diseqs.c_ptr());
-        TRACE("str", tout << "learning not " << mk_pp(final_diseq, m) << std::endl;);
+        TRACE("str_mc", tout << "learning not " << mk_pp(final_diseq, m) << std::endl;);
         return final_diseq;
     }
 
@@ -13733,11 +13857,11 @@ namespace smt {
 
         std::set<expr*> left_v_set;
         std::set<expr*> left_c_set;
-        get_sets(lhs, &left_c_set, &left_v_set);
+        get_string_sets(lhs, &left_c_set, &left_v_set);
 
         std::set<expr*> right_v_set;
         std::set<expr*> right_c_set;
-        get_sets(rhs, &right_c_set, &right_v_set);
+        get_string_sets(rhs, &right_c_set, &right_v_set);
 
         std::set<expr*>::iterator it;
 
@@ -13751,15 +13875,41 @@ namespace smt {
             diseqs.push_back(m.mk_eq(u.str.mk_length(*it), mk_int(len)));
         }
         expr* final_diseq = m.mk_and(diseqs.size(), diseqs.c_ptr());
-        TRACE("str", tout << "learning not " << mk_pp(final_diseq, m) << std::endl;);
+        TRACE("str_mc", tout << "learning not " << mk_pp(final_diseq, m) << std::endl;);
         return final_diseq;
     }
 
     expr* theory_str::refine_function(expr* f) {
-        //Can we learn something better?
         ast_manager & m = get_manager();
-        TRACE("str", tout << "learning not " << mk_pp(f, m) << std::endl;);
-        return f;
+        context & ctx = get_context();
+
+        expr_ref_vector diseqs(m);
+        diseqs.push_back(f);
+
+        //get all the int sort expressions and assert they change
+        std::set<expr*> v_set;
+        get_int_var_set(f, &v_set);
+
+        for (std::set<expr*>::iterator it=v_set.begin(); it!=v_set.end(); ++it){
+            expr* var = nullptr;
+            if (u.str.is_length(*it, var)) {
+                unsigned len = fixed_length_used_len_terms.find(var);
+                diseqs.push_back(m.mk_eq(*it, mk_int(len)));
+                TRACE("str", tout << "length " << mk_pp(*it, m) << " not equal to " << len << std::endl;);
+            } else {
+                arith_value v(ctx);
+                rational val;
+                bool val_exists = v.get_value(*it, val);
+
+                SASSERT(val_exists);
+                diseqs.push_back(m.mk_eq(*it, mk_int(val)));
+                TRACE("str", tout << "int var " << mk_pp(*it, m) << " not equal to " << val << std::endl;);
+            }
+        }
+
+        expr* final_diseq = m.mk_and(diseqs.size(), diseqs.c_ptr());
+        TRACE("str_mc", tout << "learning not " << mk_pp(final_diseq, m) << std::endl;);
+        return final_diseq;
     }
 
     bool theory_str::flatten(expr* ex, expr_ref_vector & flat) {
