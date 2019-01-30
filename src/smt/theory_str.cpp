@@ -11437,8 +11437,15 @@ namespace smt {
 
         if (full_chars.size() == 0 && suff_chars.size() > 0) {
             // the empty string doesn't "endwith" any non-empty string
-            cex = m.mk_or(m.mk_not(f), get_context().mk_eq_atom(mk_strlen(suff), mk_int(0)),
-                    m_autil.mk_ge(mk_strlen(full), mk_int(0)));
+            expr_ref len_suff(mk_strlen(suff), m);
+            SASSERT(len_suff);
+            expr_ref len_full(mk_strlen(full), m);
+            SASSERT(len_full);
+
+            expr_ref cond1(mk_eq_atom(len_suff, mk_int(0)), m);
+            expr_ref cond2(m_autil.mk_ge(len_full, mk_int(0)), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1, cond2), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11447,7 +11454,14 @@ namespace smt {
         if (full_chars.size() < suff_chars.size()) {
             // a string can't endwith a longer one
             // X startswith Y -> len(X) >= len(Y)
-            cex = m.mk_or(m.mk_not(f), m_autil.mk_ge(mk_strlen(full), mk_strlen(suff)));
+            expr_ref len_suff(mk_strlen(suff), m);
+            SASSERT(len_suff);
+            expr_ref len_full(mk_strlen(full), m);
+            SASSERT(len_full);
+
+            expr_ref cond1(m_autil.mk_ge(len_full, len_suff), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11479,7 +11493,12 @@ namespace smt {
 
         if (suff_chars.size() == 0) {
             // all strings endwith the empty one
-            cex = m.mk_or(m.mk_not(f), m.mk_not(mk_eq_atom(mk_strlen(suff), mk_int(0))));
+            expr_ref len_suff(mk_strlen(suff), m);
+            SASSERT(len_suff);
+
+            expr_ref cond1(m.mk_not(mk_eq_atom(len_suff, mk_int(0))), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11527,8 +11546,15 @@ namespace smt {
 
         if (full_chars.size() == 0 && pref_chars.size() > 0) {
             // the empty string doesn't "stratwith" any non-empty string
-            cex = m.mk_or(m.mk_not(f), get_context().mk_eq_atom(mk_strlen(pref), mk_int(0)),
-                    m_autil.mk_ge(mk_strlen(full), mk_int(0)));
+            expr_ref len_pref(mk_strlen(pref), m);
+            SASSERT(len_pref);
+            expr_ref len_full(mk_strlen(full), m);
+            SASSERT(len_full);
+
+            expr_ref cond1(mk_eq_atom(len_pref, mk_int(0)), m);
+            expr_ref cond2(m_autil.mk_ge(len_full, mk_int(0)), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1, cond2), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11537,7 +11563,14 @@ namespace smt {
         if (full_chars.size() < pref_chars.size()) {
             // a string can't startwith a longer one
             // X startswith Y -> len(X) >= len(Y)
-            cex = m.mk_or(m.mk_not(f), m_autil.mk_ge(mk_strlen(full), mk_strlen(pref)));
+            expr_ref len_pref(mk_strlen(pref), m);
+            SASSERT(len_pref);
+            expr_ref len_full(mk_strlen(full), m);
+            SASSERT(len_full);
+
+            expr_ref cond1(m_autil.mk_ge(len_full, len_pref), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11569,7 +11602,12 @@ namespace smt {
 
         if (pref_chars.size() == 0) {
             // all strings startwith the empty one
-            cex = m.mk_or(m.mk_not(f), m.mk_not(mk_eq_atom(mk_strlen(pref), mk_int(0))));
+            expr_ref len_pref(mk_strlen(pref), m);
+            SASSERT(len_pref);
+
+            expr_ref cond1(m.mk_not(mk_eq_atom(len_pref, mk_int(0))), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11617,8 +11655,15 @@ namespace smt {
 
         if (haystack_chars.size() == 0 && needle_chars.size() > 0) {
             // the empty string doesn't "contain" any non-empty string
-            cex = m.mk_or(m.mk_not(f), get_context().mk_eq_atom(mk_strlen(needle), mk_int(0)),
-                    m_autil.mk_ge(mk_strlen(haystack), mk_int(0)));
+            expr_ref len_haystack(mk_strlen(haystack), m);
+            SASSERT(len_haystack);
+            expr_ref len_needle(mk_strlen(needle), m);
+            SASSERT(len_needle);
+
+            expr_ref cond1(mk_eq_atom(len_needle, mk_int(0)), m);
+            expr_ref cond2(m_autil.mk_ge(len_haystack, mk_int(0)), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1, cond2), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11627,7 +11672,14 @@ namespace smt {
         if (needle_chars.size() > haystack_chars.size()) {
             // a string can't contain a longer one
             // X contains Y -> len(X) >= len(Y)
-            cex = m.mk_or(m.mk_not(f), m_autil.mk_ge(mk_strlen(haystack), mk_strlen(needle)));
+            expr_ref len_haystack(mk_strlen(haystack), m);
+            SASSERT(len_haystack);
+            expr_ref len_needle(mk_strlen(needle), m);
+            SASSERT(len_needle);
+
+            expr_ref rhs(m_autil.mk_ge(len_haystack, len_needle), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), rhs), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
@@ -11664,7 +11716,12 @@ namespace smt {
 
         if (needle_chars.size() == 0) {
             // all strings "contain" the empty one
-            cex = m.mk_or(m.mk_not(f), m.mk_not(mk_eq_atom(mk_strlen(needle), mk_int(0))));
+            expr_ref len_needle(mk_strlen(needle), m);
+            SASSERT(len_needle);
+
+            expr_ref cond1(m.mk_not(mk_eq_atom(len_needle, mk_int(0))), m);
+            expr_ref cex(m.mk_or(mk_not(m, f), cond1), m);
+
             th_rewriter m_rw(m);
             m_rw(cex);
             return false;
