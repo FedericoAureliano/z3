@@ -53,6 +53,11 @@ public:
         _solver2->operator()(in, result);
     }
 
+    void collect_statistics(::statistics & st) const {
+        _solver1->collect_statistics(st);
+        _solver2->collect_statistics(st);
+    }
+
 };
 
 tactic * mk_z3str3_cegar_tactical(tactic * s1, tactic * s2) {
@@ -69,22 +74,26 @@ tactic * mk_z3str3_tactic(ast_manager & m, params_ref const & p) {
     params_ref preprocess_p = p;
     preprocess_p.set_bool("str.fixed_length_preprocessing", true);
     preprocess_p.set_bool("str.fixed_length_models", true);
+    preprocess_p.set_bool("str.str.multiset_check", true);
+    preprocess_p.set_bool("str.str.count_abstraction", false);
     preprocess_p.set_sym("string_solver", symbol("z3str3"));
 
     params_ref general_p = p;
     general_p.set_bool("str.fixed_length_preprocessing", false);
     general_p.set_bool("str.fixed_length_models", false);
+    general_p.set_bool("str.str.multiset_check", false);
+    general_p.set_bool("str.str.count_abstraction", false);
     general_p.set_sym("string_solver", symbol("z3str3"));
 
     params_ref seq_p = p;
     seq_p.set_sym("string_solver", symbol("seq"));
 
-    tactic * z3str3_1 = using_params(mk_smt_tactic(m), preprocess_p);
-    tactic * z3str3_2 = try_for(using_params(mk_smt_tactic(m), general_p), 15000);
+    tactic * z3str3_1 = using_params(mk_smt_tactic(m, p), preprocess_p);
+    tactic * z3str3_2 = try_for(using_params(mk_smt_tactic(m, p), general_p), 15000);
 
     tactic * st = using_params(and_then(preamble, or_else(
             mk_z3str3_cegar_tactical(z3str3_1, z3str3_2),
-            using_params(mk_smt_tactic(m), seq_p)
+            using_params(mk_smt_tactic(m, p), seq_p)
             )), p);
     return st;
 }
