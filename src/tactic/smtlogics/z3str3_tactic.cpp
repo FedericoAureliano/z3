@@ -48,7 +48,7 @@ static bool is_cf_helper(ast_manager &m, expr * f, bool sign)
         TRACE("str_fl", tout << "Not conjunctive fragment! " << mk_pp(f, m) << std::endl;);
         return false;
     }
-    else if (u.str.is_contains(f) || u.str.is_in_re(f) || u.str.is_replace(f))
+    else if (u.str.is_contains(f) || u.str.is_replace(f))
     {
         TRACE("str_fl", tout << "Not conjunctive fragment! " << mk_pp(f, m) << std::endl;);
         return false;
