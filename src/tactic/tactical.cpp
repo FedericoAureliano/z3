@@ -301,6 +301,12 @@ public:
                 catch (tactic_exception &) {
                     result.reset();
                 }
+                catch (z3_error &) {
+                    result.reset();
+                }
+                catch (z3_exception &) {
+                    result.reset();
+                }
             }
             else {
                 t->operator()(in, result);
